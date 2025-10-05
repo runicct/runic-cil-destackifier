@@ -24,7 +24,7 @@
  */
 
 using System;
-using System.Reflection.Metadata;
+using System.Collections.Generic;
 
 namespace Runic.CIL
 {
