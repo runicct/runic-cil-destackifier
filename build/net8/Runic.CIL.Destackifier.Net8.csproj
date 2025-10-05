@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Runic.CIL.Destackifier</AssemblyName>
+    <RootNamespace>Runic.CIL.Destackifier</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\BitConverterLE.cs" Link="BitConverterLE.cs" />
+    <Compile Include="..\..\src\BranchInformation.cs" Link="BranchInformation.cs" />
+    <Compile Include="..\..\src\BranchLocation.cs" Link="BranchLocation.cs" />
+    <Compile Include="..\..\src\CompressedInteger.cs" Link="CompressedInteger.cs" />
+    <Compile Include="..\..\src\Destackifier.cs" Link="Destackifier.cs" />
+    <Compile Include="..\..\src\DestackifyDisassembler.cs" Link="DestackifyDisassembler.cs" />
+    <Compile Include="..\..\src\Disassembler.cs" Link="Disassembler.cs" />
+    <Compile Include="..\..\src\FallThroughDetector.cs" Link="FallThroughDetector.cs" />
+    <Compile Include="..\..\src\LocalCollector.cs" Link="LocalCollector.cs" />
+    <Compile Include="..\..\src\Signature.cs" Link="Signature.cs" />
+    <Compile Include="..\..\src\SignatureCollector.cs" Link="SignatureCollector.cs" />
+    <Compile Include="..\..\src\StackSize.cs" Link="StackSize.cs" />
+  </ItemGroup>
+</Project>

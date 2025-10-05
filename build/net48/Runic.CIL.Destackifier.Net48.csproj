@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{C78758C6-867B-4D74-A66E-8718C4E39D82}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Runic.CIL.Destackifier</RootNamespace>
+    <AssemblyName>Runic.CIL.Destackifier</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\BitConverterLE.cs">
+      <Link>BitConverterLE.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\BranchInformation.cs">
+      <Link>BranchInformation.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\BranchLocation.cs">
+      <Link>BranchLocation.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\CompressedInteger.cs">
+      <Link>CompressedInteger.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\Destackifier.cs">
+      <Link>Destackifier.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\DestackifyDisassembler.cs">
+      <Link>DestackifyDisassembler.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\Disassembler.cs">
+      <Link>Disassembler.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\FallThroughDetector.cs">
+      <Link>FallThroughDetector.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\LocalCollector.cs">
+      <Link>LocalCollector.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\Signature.cs">
+      <Link>Signature.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\SignatureCollector.cs">
+      <Link>SignatureCollector.cs</Link>
+    </Compile>
+
+    <Compile Include="..\..\src\StackSize.cs">
+      <Link>StackSize.cs</Link>
+    </Compile>
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
