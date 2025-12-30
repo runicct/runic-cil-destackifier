@@ -164,8 +164,6 @@ namespace Runic.CIL
         public virtual void CastClass(int offset, bool noTypeCheck, uint typeToken, int destination, int value) { }
         public virtual void EndFinally(int offset) { }
         public virtual void LdStr(int offset, uint literalStringToken, int destination) { }
-        public virtual void StSFld(int offset, uint fieldToken, int value) { }
-        public virtual void LdSFld(int offset, uint fieldToken, int destination) { }
         public virtual void LdSFldA(int offset, uint fieldToken, int destination) { }
         public virtual void LdFld(int offset, bool noTypeCheck, bool volatilePrefix, int alignment, uint fieldToken, int destination, int obj) { }
         public virtual void LdFldA(int offset, uint fieldToken, int destination, int obj) { }
