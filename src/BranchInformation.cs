@@ -57,6 +57,8 @@ namespace Runic.CIL
                 internal int Offset;
                 internal int SaveStackSize = -1;
                 internal int RestoreStackSize = -1;
+                internal bool IsExceptionHandler = false;
+                internal bool IsExceptionFilter = false;
                 public Information(int offset)
                 {
                     Offset = offset;
@@ -73,9 +75,47 @@ namespace Runic.CIL
                 }
                 return info;
             }
-            public BranchInformation(Dictionary<uint, Signature> signatures)
+#if NET6_0_OR_GREATER
+            ExceptionHandlingClause[]? _ehc;
+#else
+            ExceptionHandlingClause[] _ehc;
+#endif
+#if NET6_0_OR_GREATER
+            public BranchInformation(Dictionary<uint, Signature> signatures, ExceptionHandlingClause[]? ehc)
+#else
+            public BranchInformation(Dictionary<uint, Signature> signatures, ExceptionHandlingClause[] ehc)
+#endif
             {
                 _methodSignatures = signatures;
+                _ehc = ehc;
+            }
+            void PopulateExceptionHandlers()
+            {
+                if (_ehc != null)
+                {
+                    foreach (ExceptionHandlingClause ehc in _ehc)
+                    {
+                        switch (ehc)
+                        {
+                            case ExceptionHandlingClause.Filter filter:
+                                {
+                                    Information information = GetOrCreateInformation(filter.FilterOffset);
+                                    information.IsTarget = true;
+                                    information.IsFallThrough = false;
+                                    information.IsExceptionFilter = true;
+                                    information.RestoreStackSize = 1;
+                                    break;
+                                }
+                        }
+                        {
+                            Information information = GetOrCreateInformation(ehc.HandlerOffset);
+                            information.IsTarget = true;
+                            information.IsFallThrough = false;
+                            information.IsExceptionHandler = true;
+                            information.RestoreStackSize = 1;
+                        }
+                    }
+                }
             }
 #if NET6_0_OR_GREATER
             public void Process(Span<byte> bytecode)
@@ -84,6 +124,7 @@ namespace Runic.CIL
                 branchLocationDisassembler.Process(bytecode);
                 FallThroughDetector fallThroughDetector = new FallThroughDetector(this);
                 fallThroughDetector.Process(bytecode);
+                PopulateExceptionHandlers();
                 StackSizeDisassembler stackSizeDisassembler = new StackSizeDisassembler(this);
                 stackSizeDisassembler.Process(bytecode);
                 _maxStackSize = stackSizeDisassembler.MaxStackSize;
@@ -95,6 +136,7 @@ namespace Runic.CIL
                 branchLocationDisassembler.Process(bytecode);
                 FallThroughDetector fallThroughDetector = new FallThroughDetector(this);
                 fallThroughDetector.Process(bytecode);
+                PopulateExceptionHandlers();
                 StackSizeDisassembler stackSizeDisassembler = new StackSizeDisassembler(this);
                 stackSizeDisassembler.Process(bytecode);
                 _maxStackSize = stackSizeDisassembler.MaxStackSize;

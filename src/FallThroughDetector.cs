@@ -85,6 +85,7 @@ namespace Runic.CIL
                 public override void BrLeUn(int offset, int address) { _fallthrough = false; }
                 public override void Switch(int offset, int[] address) { _fallthrough = false; }
                 public override void Leave(int offset, int address) { _fallthrough = false; }
+                public override void EndFilter(int offset) { _fallthrough = false; }
                 public override void Rethrow(int offset) { _fallthrough = false; }
                 public override void Throw(int offset) { _fallthrough = false; }
                 public override void Ret(int offset) { _fallthrough = false; }

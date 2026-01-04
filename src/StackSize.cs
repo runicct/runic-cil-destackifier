@@ -65,7 +65,19 @@ namespace Runic.CIL
                         foreach (int chunk in chunks)
                         {
                             Information current = GetInformation(chunk);
-                            if (current.RestoreStackSize >= 0)
+                            if (current.IsExceptionHandler)
+                            {
+                                _stackSize = 1;
+                                Disassemble(bytecode, chunk, bytecode.Length);
+                                solvedOne = true;
+                            }
+                            else if (current.IsExceptionFilter)
+                            {
+                                _stackSize = 1;
+                                Disassemble(bytecode, chunk, bytecode.Length);
+                                solvedOne = true;
+                            }
+                            else if (current.RestoreStackSize >= 0)
                             {
                                 _stackSize = current.RestoreStackSize;
                                 Disassemble(bytecode, chunk, bytecode.Length);
@@ -105,7 +117,19 @@ namespace Runic.CIL
                         foreach (int chunk in chunks)
                         {
                             Information current = GetInformation(chunk);
-                            if (current.RestoreStackSize >= 0)
+                            if (current.IsExceptionHandler)
+                            {
+                                _stackSize = 1;
+                                Disassemble(bytecode, chunk, bytecode.Length);
+                                solvedOne = true;
+                            }
+                            else if (current.IsExceptionFilter)
+                            {
+                                _stackSize = 1;
+                                Disassemble(bytecode, chunk, bytecode.Length);
+                                solvedOne = true;
+                            }
+                            else if (current.RestoreStackSize >= 0)
                             {
                                 _stackSize = current.RestoreStackSize;
                                 Disassemble(bytecode, chunk, bytecode.Length);
@@ -488,7 +512,11 @@ namespace Runic.CIL
                 public override void ConvOvfU(int offset) { }
                 public override void ConvR4(int offset) { }
                 public override void ConvR8(int offset) { }
-                public override void EndFilter(int offset) { _stackSize -= 1; }
+                public override void EndFilter(int offset)
+                {
+                    if (_stackSize != 1) { throw new Exception("Stack must have 1 element before EndFilter instruction IL:" + offset.ToString()); }
+                    Abort();
+                }
                 public override void Call(int offset, bool tail, uint methodToken)
                 {
                     Signature signature = _parent._methodSignatures[methodToken];

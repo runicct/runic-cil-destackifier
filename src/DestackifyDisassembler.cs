@@ -139,41 +139,59 @@ namespace Runic.CIL
 
                 if (info.RestoreStackSize > 0)
                 {
-                    SaveSlot saveSlot;
-                    if (_saveSlots.TryGetValue(offset, out saveSlot))
+                    if (info.IsExceptionFilter || info.IsExceptionHandler)
                     {
+                        SaveSlot saveSlot;
+                        if (_saveSlots.TryGetValue(offset, out saveSlot))
+                        {
+                            _parent.StException(offset, saveSlot.Locals[0]);
+                            Push(saveSlot.Locals[0]);
+                            return;
+                        }
+                        saveSlot = new SaveSlot(offset, 1);
+                        _saveSlots.Add(offset, saveSlot);
+                        saveSlot.Locals[0] = DeclareLocal();
+                        _parent.StException(offset, saveSlot.Locals[0]);
+                        Push(saveSlot.Locals[0]);
+                    }
+                    else
+                    {
+                        SaveSlot saveSlot;
+                        if (_saveSlots.TryGetValue(offset, out saveSlot))
+                        {
+                            if (info.IsFallThrough)
+                            {
+                                for (int n = 0; n < info.RestoreStackSize; n++)
+                                {
+                                    _parent.StLoc(previousOffset, saveSlot.Locals[n], Pop());
+                                }
+                            }
+                            for (int n = 0; n < saveSlot.StackSize; n++)
+                            {
+                                Push(saveSlot.Locals[n]);
+                            }
+                            previousOffset = offset;
+                            return;
+                        }
+
+                        saveSlot = new SaveSlot(offset, info.RestoreStackSize);
+                        _saveSlots.Add(offset, saveSlot);
+
+                        for (int n = 0; n < info.RestoreStackSize; n++)
+                        {
+                            saveSlot.Locals[n] = DeclareLocal();
+                        }
                         if (info.IsFallThrough)
                         {
                             for (int n = 0; n < info.RestoreStackSize; n++)
                             {
-                                _parent.StLoc(previousOffset, saveSlot.Locals[n], Pop());
+                                _parent.StLoc(offset, saveSlot.Locals[n], Pop());
                             }
                         }
-                        for (int n = 0; n < saveSlot.StackSize; n++)
+                        for (int n = 0; n < info.RestoreStackSize; n++)
                         {
                             Push(saveSlot.Locals[n]);
                         }
-                        previousOffset = offset;
-                        return;
-                    }
-
-                    saveSlot = new SaveSlot(offset, info.RestoreStackSize);
-                    _saveSlots.Add(offset, saveSlot);
-
-                    for (int n = 0; n < info.RestoreStackSize; n++)
-                    {
-                        saveSlot.Locals[n] = DeclareLocal();
-                    }
-                    if (info.IsFallThrough)
-                    {
-                        for (int n = 0; n < info.RestoreStackSize; n++)
-                        {
-                            _parent.StLoc(offset, saveSlot.Locals[n], Pop());
-                        }
-                    }
-                    for (int n = 0; n < info.RestoreStackSize; n++)
-                    {
-                        Push(saveSlot.Locals[n]);
                     }
                 }
                 previousOffset = offset;
