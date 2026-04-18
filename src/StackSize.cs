@@ -361,6 +361,7 @@ namespace Runic.CIL
                 }
                 public override void Switch(int offset, int[] address)
                 {
+                    _stackSize -= 1;
 #if NET5_0_OR_GREATER
                     Information? current = GetInformation(offset);
 #else
