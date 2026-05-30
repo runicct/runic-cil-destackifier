@@ -236,7 +236,9 @@ namespace Runic.CIL
             HashSet<int> locals = localCollector.Process(bytecode);
             BranchInformation branchInformation = new BranchInformation(methodSignatures, exceptionHandlingClauses);
             branchInformation.Process(bytecode);
-            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, methodSignatures, locals, (uint)branchInformation.MaxStackSize, signature, this);
+            StoreSimplify storeSimplify = new StoreSimplify(branchInformation);
+            storeSimplify.Process(bytecode);
+            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, storeSimplify, methodSignatures, locals, (uint)branchInformation.MaxStackSize, signature, this);
             disassembler.Process(bytecode);
         }
 #endif
@@ -260,7 +262,9 @@ namespace Runic.CIL
             HashSet<int> locals = localCollector.Process(bytecode);
             BranchInformation branchInformation = new BranchInformation(methodSignatures, exceptionHandlingClauses);
             branchInformation.Process(bytecode);
-            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, methodSignatures, locals, (uint)branchInformation.MaxStackSize, signature, this);
+            StoreSimplify storeSimplify = new StoreSimplify(branchInformation);
+            storeSimplify.Process(bytecode);
+            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, storeSimplify, methodSignatures, locals, (uint)branchInformation.MaxStackSize, signature, this);
             disassembler.Process(bytecode);
         }
     }

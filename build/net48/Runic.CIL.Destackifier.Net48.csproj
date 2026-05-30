@@ -79,6 +79,11 @@
       <Link>SignatureCollector.cs</Link>
     </Compile>
 
+    <Compile Include="..\..\src\StoreSimplify.cs">
+      <Link>StoreSimplify.cs</Link>
+    </Compile>
+
+
     <Compile Include="..\..\src\StackSize.cs">
       <Link>StackSize.cs</Link>
     </Compile>

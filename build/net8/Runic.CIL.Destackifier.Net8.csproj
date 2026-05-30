@@ -20,5 +20,6 @@
     <Compile Include="..\..\src\Signature.cs" Link="Signature.cs" />
     <Compile Include="..\..\src\SignatureCollector.cs" Link="SignatureCollector.cs" />
     <Compile Include="..\..\src\StackSize.cs" Link="StackSize.cs" />
+    <Compile Include="..\..\src\StoreSimplify.cs" Link="StoreSimplify.cs" />
   </ItemGroup>
 </Project>
