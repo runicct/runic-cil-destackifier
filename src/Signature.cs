@@ -187,15 +187,6 @@ namespace Runic.CIL
                     }
                     public override void Emit(List<byte> output) { output.Add(0x1D); _elementType.Emit(output); }
                 }
-                internal class RuntimeTypeHandle : ValueType
-                {
-                    static RuntimeTypeHandle _instance = new RuntimeTypeHandle();
-                    public static RuntimeTypeHandle Instance { get { return _instance; } }
-                    public RuntimeTypeHandle() : base(0)
-                    {
-                    }
-                }
-
                 internal class GenericTypeInType : Type
                 {
                     uint _index;

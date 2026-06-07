@@ -35,6 +35,7 @@ namespace Runic.CIL
         public virtual byte[] GetLocalsSignature(uint methodToken) { return new byte[0]; }
         public virtual byte[] GetFieldSignature(uint fieldToken) { return new byte[0]; }
         public virtual bool IsValueType(uint typeToken) { return false; }
+        public virtual uint GetRuntimeTypeHandleToken() { return 0; }
 
         public class ExceptionHandlingClause
         {

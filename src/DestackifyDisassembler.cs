@@ -163,6 +163,14 @@ namespace Runic.CIL
                 _delayedTypeLocals.Remove(local);
             }
 
+            uint _runtimeTypeHandleToken = 0;
+            uint GetRuntimeTypeHandleToken()
+            {
+                if (_runtimeTypeHandleToken != 0) { return _runtimeTypeHandleToken; }
+                _runtimeTypeHandleToken = _parent.GetRuntimeTypeHandleToken();
+                return _runtimeTypeHandleToken;
+            }
+
             Dictionary<int, SaveSlot> _saveSlots = new Dictionary<int, SaveSlot>();
             public void PopulateSaveSlot(int offset)
             {
@@ -473,7 +481,7 @@ namespace Runic.CIL
 
             public override void LdToken(int offset, uint token)
             {
-                int dest = GetDestinationLocal(offset, Signature.Type.RuntimeTypeHandle.Instance);
+                int dest = GetDestinationLocal(offset, new Signature.Type.TypeToken(GetRuntimeTypeHandleToken()));
                 _parent.LdToken(offset, token, dest);
                 Push(dest);
             }
