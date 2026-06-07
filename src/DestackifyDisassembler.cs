@@ -24,6 +24,7 @@
 
 using System;
 using System.Collections.Generic;
+using static Runic.CIL.Destackifier.Signature;
 
 namespace Runic.CIL
 {
@@ -46,15 +47,17 @@ namespace Runic.CIL
 
             Destackifier _parent;
             int[] _stack;
-            Signature _signature;
+            Signature.MethodSignature _signature;
             StoreSimplify _storeSimplify;
             BranchInformation _branchInformation;
-            Dictionary<uint, Signature> _signatures;
-            HashSet<int> _locals = new HashSet<int>();
-            internal DestackifyDisassembler(BranchInformation branchInformation, StoreSimplify storeSimplify, Dictionary<uint, Signature> signatures, HashSet<int> locals, uint maxStackSize, Signature signature, Destackifier parent)
+            Dictionary<uint, Signature.MethodSignature> _signatures;
+            int _nextLocal = 0;
+            Signature.LocalsSignature _locals;
+            internal DestackifyDisassembler(BranchInformation branchInformation, StoreSimplify storeSimplify, Dictionary<uint, Signature.MethodSignature> signatures, Signature.LocalsSignature locals, uint maxStackSize, Signature.MethodSignature signature, Destackifier parent)
             {
                 _storeSimplify = storeSimplify;
                 _locals = locals;
+                _nextLocal = _locals.LocalsCount;
                 _parent = parent;
                 _stack = new int[maxStackSize];
                 _branchInformation = branchInformation;
@@ -71,8 +74,7 @@ namespace Runic.CIL
             {
                 Disassemble(il, 0, il.Length);
             }
-            int _nextLocal = 0;
-            public int GetDestinationLocal(int offset)
+            public int GetDestinationLocal(int offset, Signature.Type type)
             {
 #if NET6_0_OR_GREATER
                 StoreSimplify.StoreInfo? store = _storeSimplify.GetStoreInfo(offset);
@@ -80,14 +82,85 @@ namespace Runic.CIL
                 StoreSimplify.StoreInfo store = _storeSimplify.GetStoreInfo(offset);
 #endif
                 if (store != null) { return store.Index; }
-                int local = DeclareLocal();
-                _locals.Add(local);
+                int local = DeclareLocal(type);
                 return local;
             }
-            public int DeclareLocal()
+            Dictionary<int, Signature.Type> _localTypes = new Dictionary<int, Signature.Type>();
+            public Signature.Type GetLocalType(int local)
             {
-                while (_locals.Contains(_nextLocal)) { _nextLocal++; }
-                return _nextLocal++;
+                if (local < _locals.LocalsCount) { return _locals.GetLocalType(local); }
+
+                Signature.Type type;
+                if (_localTypes.TryGetValue(local, out type)) { return type; }
+
+                return Signature.Type.Unknown.Instance;
+            }
+            public Signature.Type GetOperationType(int a, int b)
+            {
+                Signature.Type typeA = GetLocalType(a);
+                Signature.Type typeB = GetLocalType(b);
+                if (typeA == typeB) { return typeA; }
+                return Signature.Type.Unknown.Instance;
+            }
+            Dictionary<uint, Signature.Type> _fieldTypes = new Dictionary<uint, Signature.Type>();
+            public Signature.Type GetFieldType(uint fieldToken)
+            {
+                Signature.Type type;
+                if (_fieldTypes.TryGetValue(fieldToken, out type)) { return type; }
+                type = Signature.Type.Unknown.Instance;
+                byte[] signature = _parent.GetFieldSignature(fieldToken);
+                if (signature != null && signature.Length > 0)
+                {
+                    FieldSignature fieldSignature = new FieldSignature(signature);
+                    type = fieldSignature.FieldType;
+                }
+                _fieldTypes.Add(fieldToken, type);
+                return type;
+            }
+            Dictionary<uint, bool> _valueTypes = new Dictionary<uint, bool>();
+            public bool IsValueType(uint typeToken)
+            {
+                bool isValueType;
+                if (_valueTypes.TryGetValue(typeToken, out isValueType)) { return isValueType; }
+                isValueType = _parent.IsValueType(typeToken);
+                _valueTypes.Add(typeToken, isValueType);
+                return isValueType;
+            }
+            public Signature.Type GetTypeFromToken(uint typeToken)
+            {
+                if (IsValueType(typeToken)) { return new Signature.Type.ValueType(typeToken); }
+                else { return new Signature.Type.TypeToken(typeToken); }
+            }
+            public int DeclareLocal(Signature.Type type)
+            {
+                int local = _nextLocal;
+                _nextLocal++;
+                _localTypes.Add(local, type);
+                if (!(type is Signature.Type.Unknown))
+                {
+                    List<byte> output = new List<byte>();
+                    type.Emit(output);
+                    _parent.DeclareLocal(local, output.ToArray());
+                }
+                else
+                {
+                    _parent.DeclareLocal(local, new byte[0]);
+                }
+                return local;
+            }
+            HashSet<int> _delayedTypeLocals = new HashSet<int>();
+            public int DeclareDelayTypedLocal()
+            {
+                int local = _nextLocal;
+                _nextLocal++;
+                _delayedTypeLocals.Add(local);
+                return local;
+            }
+            public void SetLocalType(int local, Signature.Type type)
+            {
+                if (!_delayedTypeLocals.Contains(local)) { return; }
+                _localTypes.Add(local, type);
+                _delayedTypeLocals.Remove(local);
             }
 
             Dictionary<int, SaveSlot> _saveSlots = new Dictionary<int, SaveSlot>();
@@ -113,7 +186,7 @@ namespace Runic.CIL
                     for (int n = 0; n < info.SaveStackSize; n++)
                     {
                         int local = Pop();
-                        saveSlot.Locals[n] = DeclareLocal();
+                        saveSlot.Locals[n] = DeclareLocal(GetLocalType(local));
                         _parent.StLoc(offset, saveSlot.Locals[n], local);
                     }
                 }
@@ -164,7 +237,7 @@ namespace Runic.CIL
                         }
                         saveSlot = new SaveSlot(offset, 1);
                         _saveSlots.Add(offset, saveSlot);
-                        saveSlot.Locals[0] = DeclareLocal();
+                        saveSlot.Locals[0] = DeclareLocal(Signature.Type.Object.Instance);
                         _parent.StException(offset, saveSlot.Locals[0]);
                         Push(saveSlot.Locals[0]);
                     }
@@ -177,6 +250,9 @@ namespace Runic.CIL
                             {
                                 for (int n = 0; n < info.RestoreStackSize; n++)
                                 {
+                                    int local = Pop();
+                                    Signature.Type localType = GetLocalType(local);
+                                    if (localType != null && !(localType is Signature.Type.Unknown)) { SetLocalType(saveSlot.Locals[n], localType); }
                                     _parent.StLoc(previousOffset, saveSlot.Locals[n], Pop());
                                 }
                             }
@@ -191,15 +267,20 @@ namespace Runic.CIL
                         saveSlot = new SaveSlot(offset, info.RestoreStackSize);
                         _saveSlots.Add(offset, saveSlot);
 
-                        for (int n = 0; n < info.RestoreStackSize; n++)
-                        {
-                            saveSlot.Locals[n] = DeclareLocal();
-                        }
                         if (info.IsFallThrough)
                         {
                             for (int n = 0; n < info.RestoreStackSize; n++)
                             {
-                                _parent.StLoc(offset, saveSlot.Locals[n], Pop());
+                                int local = Pop();
+                                saveSlot.Locals[n] = DeclareLocal(GetLocalType(local));
+                                _parent.StLoc(offset, saveSlot.Locals[n], local);
+                            }
+                        }
+                        else
+                        {
+                            for(int n = 0; n < info.RestoreStackSize; n++)
+                            {
+                                saveSlot.Locals[n] = DeclareDelayTypedLocal();
                             }
                         }
                         for (int n = 0; n < info.RestoreStackSize; n++)
@@ -215,7 +296,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.Add(offset, dest, a, b);
                 Push(dest);
             }
@@ -223,7 +304,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.AddOvf(offset, dest, a, b);
                 Push(dest);
             }
@@ -231,7 +312,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.AddOvfUn(offset, dest, a, b);
                 Push(dest);
             }
@@ -239,7 +320,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.And(offset, dest, a, b);
                 Push(dest);
             }
@@ -247,7 +328,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.Or(offset, dest, a, b);
                 Push(dest);
             }
@@ -255,7 +336,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.Xor(offset, dest, a, b);
                 Push(dest);
             }
@@ -263,7 +344,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.Sub(offset, dest, a, b);
                 Push(dest);
             }
@@ -271,7 +352,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.SubOvf(offset, dest, a, b);
                 Push(dest);
             }
@@ -279,7 +360,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.SubOvfUn(offset, dest, a, b);
                 Push(dest);
             }
@@ -287,7 +368,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.Mul(offset, dest, a, b);
                 Push(dest);
             }
@@ -295,7 +376,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.MulOvf(offset, dest, a, b);
                 Push(dest);
             }
@@ -303,7 +384,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.MulOvfUn(offset, dest, a, b);
                 Push(dest);
             }
@@ -311,7 +392,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.Div(offset, dest, a, b);
                 Push(dest);
             }
@@ -319,7 +400,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.DivUn(offset, dest, a, b);
                 Push(dest);
             }
@@ -327,7 +408,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.Rem(offset, dest, a, b);
                 Push(dest);
             }
@@ -335,7 +416,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetOperationType(a, b));
                 _parent.RemUn(offset, dest, a, b);
                 Push(dest);
             }
@@ -343,7 +424,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetLocalType(a));
                 _parent.Shr(offset, dest, a, b);
                 Push(dest);
             }
@@ -351,7 +432,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetLocalType(a));
                 _parent.ShrUn(offset, dest, a, b);
                 Push(dest);
             }
@@ -359,27 +440,27 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetLocalType(a));
                 _parent.Shl(offset, dest, a, b);
                 Push(dest);
             }
             public override void Not(int offset)
             {
                 int value = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetLocalType(value));
                 _parent.Not(offset, dest, value);
                 Push(dest);
             }
             public override void SizeOf(int offset, uint typeToken)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.SizeOf(offset, typeToken, dest);
                 Push(dest);
             }
             public override void LdObj(int offset, bool volatilePrefix, int alignment, uint typeToken)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetTypeFromToken(typeToken));
                 _parent.LdObj(offset, volatilePrefix, alignment, typeToken, dest, address);
                 Push(dest);
             }
@@ -392,21 +473,21 @@ namespace Runic.CIL
 
             public override void LdToken(int offset, uint token)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.RuntimeTypeHandle.Instance);
                 _parent.LdToken(offset, token, dest);
                 Push(dest);
             }
             public override void Neg(int offset)
             {
                 int src = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetLocalType(src));
                 _parent.Neg(offset, dest, src);
                 Push(dest);
             }
             public override void LocAlloc(int offset)
             {
                 int size = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.LocAlloc(offset, dest, size);
                 Push(dest);
             }
@@ -427,7 +508,7 @@ namespace Runic.CIL
             public override void EndFinally(int offset) { _parent.EndFinally(offset); }
             public override void LdArg(int offset, int index)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, _signature.GetParameterType(index));
                 _parent.LdArg(offset, dest, index);
                 Push(dest);
             }
@@ -438,7 +519,7 @@ namespace Runic.CIL
             }
             public override void LdLocA(int offset, int index)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, new Signature.Type.Pointer(GetLocalType(index)));
                 _parent.LdLocA(offset, dest, index);
                 Push(dest);
             }
@@ -468,7 +549,7 @@ namespace Runic.CIL
             public override void LdLen(int offset)
             {
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.LdLen(offset, dest, array);
                 Push(dest);
             }
@@ -476,7 +557,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.Ceq(offset, dest, a, b);
                 Push(dest);
             }
@@ -484,7 +565,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.Clt(offset, dest, a, b);
                 Push(dest);
             }
@@ -492,7 +573,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.CltUn(offset, dest, a, b);
                 Push(dest);
             }
@@ -500,7 +581,7 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.Cgt(offset, dest, a, b);
                 Push(dest);
             }
@@ -508,14 +589,14 @@ namespace Runic.CIL
             {
                 int b = Pop();
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.CgtUn(offset, dest, a, b);
                 Push(dest);
             }
             public override void ConvU(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NUInt.Instance);
                 _parent.ConvU(offset, dest, a);
                 Push(dest);
             }
@@ -523,7 +604,7 @@ namespace Runic.CIL
             public override void ConvI(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.ConvI(offset, dest, a);
                 Push(dest);
             }
@@ -531,223 +612,223 @@ namespace Runic.CIL
             public override void ConvI1(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvI1(offset, dest, a);
                 Push(dest);
             }
             public override void ConvI2(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvI2(offset, dest, a);
                 Push(dest);
             }
             public override void ConvI4(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvI4(offset, dest, a);
                 Push(dest);
             }
             public override void ConvI8(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int64.Instance);
                 _parent.ConvI8(offset, dest, a);
                 Push(dest);
             }
             public override void ConvU1(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvU1(offset, dest, a);
                 Push(dest);
             }
             public override void ConvU2(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvU2(offset, dest, a);
                 Push(dest);
             }
             public override void ConvU4(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvU4(offset, dest, a);
                 Push(dest);
             }
             public override void ConvU8(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt64.Instance);
                 _parent.ConvU8(offset, dest, a);
                 Push(dest);
             }
             public override void ConvR4(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Float.Instance);
                 _parent.ConvR4(offset, dest, a);
                 Push(dest);
             }
             public override void ConvR8(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Double.Instance);
                 _parent.ConvR8(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.ConvOvfI(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI1(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvOvfI1(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI2(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvOvfI2(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI4(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvOvfI4(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI8(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int64.Instance);
                 _parent.ConvOvfI8(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NUInt.Instance);
                 _parent.ConvOvfU(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU1(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvOvfU1(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU2(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvOvfU2(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU4(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvOvfU4(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU8(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt64.Instance);
                 _parent.ConvOvfU8(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfIUn(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.ConvOvfIUn(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI1Un(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvOvfI1Un(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI2Un(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvOvfI2Un(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI4Un(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.ConvOvfI4Un(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfI8Un(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int64.Instance);
                 _parent.ConvOvfI8Un(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfUUn(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NUInt.Instance);
                 _parent.ConvOvfUUn(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU1Un(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvOvfU1Un(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU2Un(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvOvfU2Un(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU4Un(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.ConvOvfU4Un(offset, dest, a);
                 Push(dest);
             }
             public override void ConvOvfU8Un(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt64.Instance);
                 _parent.ConvOvfU8Un(offset, dest, a);
                 Push(dest);
             }
             public override void ConvRUn(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Double.Instance);
                 _parent.ConvRUn(offset, dest, a);
                 Push(dest);
             }
             public override void Call(int offset, bool tail, uint methodToken)
             {
-                Signature methodSignature = _signatures[methodToken];
+                Signature.MethodSignature methodSignature = _signatures[methodToken];
                 uint parameterCount = methodSignature.ParametersCount;
                 if (methodSignature.HasThis) { parameterCount += 1; }
                 int[] parameters = new int[parameterCount];
@@ -755,7 +836,7 @@ namespace Runic.CIL
 
                 if (!methodSignature.ReturnVoid)
                 {
-                    int dest = GetDestinationLocal(offset);
+                    int dest = GetDestinationLocal(offset, methodSignature.ReturnType);
                     _parent.Call(offset, tail, methodToken, dest, parameters);
                     Push(dest);
                 }
@@ -766,7 +847,7 @@ namespace Runic.CIL
             }
             public override void CallVirt(int offset, bool noNullCheck, uint constrainedType, bool tail, uint methodToken)
             {
-                Signature methodSignature = _signatures[methodToken];
+                Signature.MethodSignature methodSignature = _signatures[methodToken];
                 uint parameterCount = methodSignature.ParametersCount;
                 if (methodSignature.HasThis) { parameterCount += 1; }
                 int[] parameters = new int[parameterCount];
@@ -774,7 +855,7 @@ namespace Runic.CIL
 
                 if (!methodSignature.ReturnVoid)
                 {
-                    int dest = GetDestinationLocal(offset);
+                    int dest = GetDestinationLocal(offset, methodSignature.ReturnType);
                     _parent.CallVirt(offset, noNullCheck, tail, methodToken, dest, parameters);
                     Push(dest);
                 }
@@ -785,14 +866,14 @@ namespace Runic.CIL
             }
             public override void Calli(int offset, bool tail, uint descriptorToken)
             {
-                Signature methodSignature = _signatures[descriptorToken];
+                Signature.MethodSignature methodSignature = _signatures[descriptorToken];
                 uint parameterCount = methodSignature.ParametersCount;
                 if (methodSignature.HasThis) { parameterCount += 1; }
                 int[] parameters = new int[parameterCount];
                 for (int n = parameters.Length - 1; n >= 0; n--) { parameters[n] = Pop(); }
                 if (!methodSignature.ReturnVoid)
                 {
-                    int dest = GetDestinationLocal(offset);
+                    int dest = GetDestinationLocal(offset, methodSignature.ReturnType);
                     _parent.CallI(offset, tail, descriptorToken, dest, parameters);
                     Push(dest);
                 }
@@ -803,7 +884,7 @@ namespace Runic.CIL
             }
             public override void LdStr(int offset, uint literalStringToken)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.String.Instance);
                 _parent.LdStr(offset, literalStringToken, dest);
                 Push(dest);
             }
@@ -814,27 +895,27 @@ namespace Runic.CIL
             }
             public override void LdSFld(int offset, bool volatilePrefix, uint fieldToken)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetFieldType(fieldToken));
                 _parent.LdSFld(offset, volatilePrefix, fieldToken, dest);
                 Push(dest);
             }
             public override void LdSFldA(int offset, uint fieldToken)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, new Signature.Type.ByRef(GetFieldType(fieldToken)));
                 _parent.LdSFldA(offset, fieldToken, dest);
                 Push(dest);
             }
             public override void LdFld(int offset, bool noTypeCheck, bool volatilePrefix, int alignment, uint fieldToken)
             {
                 int obj = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetFieldType(fieldToken));
                 _parent.LdFld(offset, noTypeCheck, volatilePrefix, alignment, fieldToken, dest, obj);
                 Push(dest);
             }
             public override void LdFldA(int offset, uint fieldToken)
             {
                 int obj = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, new Signature.Type.ByRef(GetFieldType(fieldToken)));
                 _parent.LdFldA(offset, fieldToken, dest, obj);
                 Push(dest);
             }
@@ -846,56 +927,60 @@ namespace Runic.CIL
             }
             public override void LdArgA(int offset, int index)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, new Signature.Type.ByRef(_signature.GetParameterType(index)));
                 _parent.LdArgA(offset, dest, index);
                 Push(dest);
             }
             public override void IsInst(int offset, uint typeToken)
             {
                 int value = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetTypeFromToken(typeToken));
                 _parent.IsInst(offset, typeToken, dest, value);
                 Push(dest);
             }
             public override void CastClass(int offset, bool noTypeCheck, uint typeToken)
             {
                 int value = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetTypeFromToken(typeToken));
                 _parent.CastClass(offset, noTypeCheck, typeToken, dest, value);
                 Push(dest);
             }
             public override void Box(int offset, uint typeToken)
             {
                 int src = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Object.Instance);
                 _parent.Box(offset, typeToken, dest, src);
                 Push(dest);
             }
             public override void UnboxAny(int offset, uint typeToken)
             {
                 int src = Pop();
-                int dest = GetDestinationLocal(offset);
+                // We don't know here what the type is (valueType, GenericType, ...). So we just report it
+                // as a type token. In this case the caller will have to do some work.
+                int dest = GetDestinationLocal(offset, GetTypeFromToken(typeToken));
                 _parent.UnboxAny(offset, typeToken, dest, src);
                 Push(dest);
             }
             public override void Unbox(int offset, bool noTypeCheck, uint typeToken)
             {
                 int src = Pop();
-                int dest = GetDestinationLocal(offset);
+                // We don't know here what the type is (valueType, GenericType, ...). So we just report it
+                // as a type token. In this case the caller will have to do some work.
+                int dest = GetDestinationLocal(offset, GetTypeFromToken(typeToken));
                 _parent.Unbox(offset, noTypeCheck, typeToken, dest, src);
                 Push(dest);
             }
             public override void NewArr(int offset, uint typeToken)
             {
                 int size = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, new Signature.Type.ArrayType(GetTypeFromToken(typeToken)));
                 _parent.NewArr(offset, typeToken, dest, size);
                 Push(dest);
             }
             public override void NewObj(int offset, uint ctorToken)
             {
-                Signature ctorSig = _signatures[ctorToken];
-                int dest = GetDestinationLocal(offset);
+                Signature.MethodSignature ctorSig = _signatures[ctorToken];
+                int dest = GetDestinationLocal(offset, ctorSig.ReturnType);
                 int[] parameters = new int[ctorSig.ParametersCount];
                 for (int n = parameters.Length - 1; n >= 0; n--) { parameters[n] = Pop(); }
                 _parent.NewObj(offset, ctorToken, dest, parameters);
@@ -908,84 +993,84 @@ namespace Runic.CIL
             }
             public override void LdNull(int offset)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.LdNull(offset, dest);
                 Push(dest);
             }
             public override void LdIndI(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.LdIndI(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
             public override void LdIndI1(int offset, bool volatilePrefix)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.LdIndI1(offset, volatilePrefix, dest, address);
                 Push(dest);
             }
             public override void LdIndI2(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.LdIndI2(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
             public override void LdIndI4(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.LdIndI4(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
             public override void LdIndI8(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int64.Instance);
                 _parent.LdIndI8(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
             public override void LdIndU1(int offset, bool volatilePrefix)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.LdIndU1(offset, volatilePrefix, dest, address);
                 Push(dest);
             }
             public override void LdIndU2(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.LdIndU2(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
             public override void LdIndU4(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.LdIndU4(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
             public override void LdIndR4(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Float.Instance);
                 _parent.LdIndR4(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
             public override void LdIndR8(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Double.Instance);
                 _parent.LdIndR8(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
             public override void LdIndRef(int offset, bool volatilePrefix, int alignment)
             {
                 int address = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Unknown.Instance);
                 _parent.LdIndRef(offset, volatilePrefix, alignment, dest, address);
                 Push(dest);
             }
@@ -1040,7 +1125,7 @@ namespace Runic.CIL
             public override void LdVirtFtn(int offset, bool noNullCheck, uint methodToken)
             {
                 int obj = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.LdVirtFtn(offset, noNullCheck, methodToken, dest, obj);
                 Push(dest);
             }
@@ -1048,7 +1133,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.LdElemI(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1056,7 +1141,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.LdElemI1(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1064,7 +1149,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.LdElemI2(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1072,7 +1157,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.LdElemI4(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1080,7 +1165,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int64.Instance);
                 _parent.LdElemI8(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1088,7 +1173,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.LdElemU1(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1096,7 +1181,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.LdElemU2(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1104,7 +1189,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.UInt32.Instance);
                 _parent.LdElemU4(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1112,7 +1197,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Float.Instance);
                 _parent.LdElemR4(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1120,7 +1205,7 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Double.Instance);
                 _parent.LdElemR8(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1128,7 +1213,13 @@ namespace Runic.CIL
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+#if NET6_0_OR_GREATER
+                Signature.Type.ArrayType? arrayType = GetLocalType(array) as Signature.Type.ArrayType;
+#else
+                Signature.Type.ArrayType arrayType = GetLocalType(array) as Signature.Type.ArrayType;
+#endif
+                Signature.Type elementType = arrayType != null ? arrayType.ElementType : Signature.Type.Unknown.Instance;
+                int dest = GetDestinationLocal(offset, elementType);
                 _parent.LdElemRef(offset, noNullCheck, noBoundCheck, dest, array, index);
                 Push(dest);
             }
@@ -1138,14 +1229,14 @@ namespace Runic.CIL
 
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetTypeFromToken(typeToken));
                 _parent.LdElem(offset, noNullCheck, noBoundCheck, typeToken, dest, array, index);
             }
             public override void LdElemA(int offset, bool noNullCheck, bool noTypeCheck, bool noBoundCheck, bool readOnly, uint typeToken)
             {
                 int index = Pop();
                 int array = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, new Signature.Type.ByRef(GetTypeFromToken(typeToken)));
 
                 _parent.LdElemA(offset, noNullCheck, noTypeCheck, noBoundCheck, readOnly, typeToken, dest, array, index);
             }
@@ -1200,7 +1291,7 @@ namespace Runic.CIL
             }
             public override void LdFtn(int offset, uint methodToken)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.NInt.Instance);
                 _parent.LdFtn(offset, methodToken, dest);
                 Push(dest);
             }
@@ -1347,37 +1438,37 @@ namespace Runic.CIL
             public override void CkFinite(int offset)
             {
                 int a = Pop();
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, GetLocalType(a));
                 _parent.CkFinite(offset, dest, a);
                 Push(dest);
             }
             public override void ArgList(int offset)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Unknown.Instance);
                 _parent.ArgList(offset, dest);
                 Push(dest);
             }
             public override void LdcI4(int offset, int constant)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int32.Instance);
                 _parent.LdcI4(offset, dest, constant);
                 Push(dest);
             }
             public override void LdcI8(int offset, long constant)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Int64.Instance);
                 _parent.LdcI8(offset, dest, constant);
                 Push(dest);
             }
             public override void LdcR4(int offset, float constant)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Float.Instance);
                 _parent.LdcR4(offset, dest, constant);
                 Push(dest);
             }
             public override void LdcR8(int offset, double constant)
             {
-                int dest = GetDestinationLocal(offset);
+                int dest = GetDestinationLocal(offset, Signature.Type.Double.Instance);
                 _parent.LdcR8(offset, dest, constant);
                 Push(dest);
             }

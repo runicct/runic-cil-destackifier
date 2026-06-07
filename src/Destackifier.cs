@@ -31,6 +31,11 @@ namespace Runic.CIL
 {
     public abstract partial class Destackifier
     {
+        public abstract byte[] GetMethodSignature(uint methodToken);
+        public virtual byte[] GetLocalsSignature(uint methodToken) { return new byte[0]; }
+        public virtual byte[] GetFieldSignature(uint fieldToken) { return new byte[0]; }
+        public virtual bool IsValueType(uint typeToken) { return false; }
+
         public class ExceptionHandlingClause
         {
             public class Filter : ExceptionHandlingClause
@@ -223,48 +228,70 @@ namespace Runic.CIL
         public virtual void EndFilter(int offset, int value) { }
         public virtual void Jmp(int offset, uint methodToken) { }
         public virtual void StException(int offset, int destination) { }
+        public virtual void DeclareLocal(int local, byte[] signature) { }
+
 #if NET6_0_OR_GREATER
-        public void Destackify(uint methodToken, Span<byte> bytecode) { Destackify(GetMethodSignature(methodToken), bytecode); }
-        public void Destackify(byte[] methodSignature, Span<byte> bytecode) { Destackify(null, methodSignature, bytecode); }
-        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, uint methodToken, Span<byte> bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), bytecode); }
-        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, Span<byte> bytecode)
+        public void Destackify(uint methodToken, Span<byte> bytecode) { Destackify(GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
+        public void Destackify(byte[] methodSignature, Span<byte> bytecode) { Destackify(null, methodSignature, new byte[0], bytecode); }
+        public void Destackify(byte[] methodSignature, byte[] localsSignature, Span<byte> bytecode) { Destackify(null, methodSignature, localsSignature, bytecode); }
+        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, uint methodToken, Span<byte> bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
+        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, Span<byte> bytecode)
         {
             SignatureCollector signatureCollector = new SignatureCollector(this);
-            Signature signature = new Signature(this, methodSignature);
-            Dictionary<uint, Signature> methodSignatures = signatureCollector.Process(bytecode);
-            LocalCollector localCollector = new LocalCollector();
-            HashSet<int> locals = localCollector.Process(bytecode);
+            Signature.MethodSignature signature = new Signature.MethodSignature(this, methodSignature);
+            Signature.LocalsSignature locSignature;
+            Dictionary<uint, Signature.MethodSignature> methodSignatures = signatureCollector.Process(bytecode);
+            if (localsSignature == null || localsSignature.Length == 0)
+            {
+                LocalCollector localCollector = new LocalCollector();
+                locSignature = new Signature.LocalsSignature(localCollector.Process(bytecode));
+            }
+            else { locSignature = new Signature.LocalsSignature(localsSignature); }
             BranchInformation branchInformation = new BranchInformation(methodSignatures, exceptionHandlingClauses);
             branchInformation.Process(bytecode);
             StoreSimplify storeSimplify = new StoreSimplify(branchInformation);
             storeSimplify.Process(bytecode);
-            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, storeSimplify, methodSignatures, locals, (uint)branchInformation.MaxStackSize, signature, this);
+            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, storeSimplify, methodSignatures, locSignature, (uint)branchInformation.MaxStackSize, signature, this);
             disassembler.Process(bytecode);
         }
 #endif
-        public void Destackify(uint methodToken, byte[] bytecode) { Destackify(GetMethodSignature(methodToken), bytecode); }
-        public void Destackify(byte[] methodSignature, byte[] bytecode) { Destackify(null, methodSignature, bytecode); }
+        public void Destackify(uint methodToken, byte[] bytecode) { Destackify(GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
+        public void Destackify(byte[] methodSignature, byte[] bytecode) { Destackify(null, methodSignature, new byte[0], bytecode); }
+        public void Destackify(byte[] methodSignature, byte[] localSignature, byte[] bytecode) { Destackify(null, methodSignature, localSignature, bytecode); }
 #if NET6_0_OR_GREATER
-        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, uint methodToken, byte[] bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), bytecode); }
+        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, uint methodToken, byte[] bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
 #else
-        public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, uint methodToken, byte[] bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), bytecode); }
+        public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, uint methodToken, byte[] bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
 #endif
+
 #if NET6_0_OR_GREATER
-        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] bytecode)
+        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] bytecode) { Destackify(exceptionHandlingClauses, methodSignature, new byte[0], bytecode); }
 #else
-        public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, byte[] methodSignature, byte[] bytecode)
+        public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, byte[] methodSignature, byte[] bytecode) { Destackify(exceptionHandlingClauses, methodSignature, new byte[0], bytecode); }
+#endif
+
+#if NET6_0_OR_GREATER
+        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, byte[] bytecode)
+#else
+        public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, byte[] bytecode)
 #endif
         {
             SignatureCollector signatureCollector = new SignatureCollector(this);
-            Signature signature = new Signature(this, methodSignature);
-            Dictionary<uint, Signature> methodSignatures = signatureCollector.Process(bytecode);
-            LocalCollector localCollector = new LocalCollector();
-            HashSet<int> locals = localCollector.Process(bytecode);
+            Signature.MethodSignature signature = new Signature.MethodSignature(this, methodSignature);
+            Dictionary<uint, Signature.MethodSignature> methodSignatures = signatureCollector.Process(bytecode);
+            Signature.LocalsSignature locSignature;
+            if (localsSignature == null || localsSignature.Length == 0)
+            {
+                LocalCollector localCollector = new LocalCollector();
+                locSignature = new Signature.LocalsSignature(localCollector.Process(bytecode));
+            }
+            else { locSignature = new Signature.LocalsSignature(localsSignature); }
+            
             BranchInformation branchInformation = new BranchInformation(methodSignatures, exceptionHandlingClauses);
             branchInformation.Process(bytecode);
             StoreSimplify storeSimplify = new StoreSimplify(branchInformation);
             storeSimplify.Process(bytecode);
-            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, storeSimplify, methodSignatures, locals, (uint)branchInformation.MaxStackSize, signature, this);
+            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, storeSimplify, methodSignatures, locSignature, (uint)branchInformation.MaxStackSize, signature, this);
             disassembler.Process(bytecode);
         }
     }

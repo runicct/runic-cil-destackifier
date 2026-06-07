@@ -29,23 +29,22 @@ namespace Runic.CIL
 {
     public abstract partial class Destackifier
     {
-        public abstract byte[] GetMethodSignature(uint methodToken);
         class SignatureCollector : Disassembler
         {
             Destackifier _parent;
-            Dictionary<uint, Signature> _methodSignatures = new Dictionary<uint, Signature>();
+            Dictionary<uint, Signature.MethodSignature> _methodSignatures = new Dictionary<uint, Signature.MethodSignature>();
             public SignatureCollector(Destackifier parent)
             {
                 _parent = parent;
             }
 #if NET6_0_OR_GREATER
-            public Dictionary<uint, Signature> Process(Span<byte> bytecode)
+            public Dictionary<uint, Signature.MethodSignature> Process(Span<byte> bytecode)
             {
                 Disassemble(bytecode, 0, bytecode.Length);
                 return _methodSignatures;
             }
 #endif
-            public Dictionary<uint, Signature> Process(byte[] bytecode)
+            public Dictionary<uint, Signature.MethodSignature> Process(byte[] bytecode)
             {
                 Disassemble(bytecode, 0, bytecode.Length);
                 return _methodSignatures;
@@ -55,7 +54,7 @@ namespace Runic.CIL
                 if (!_methodSignatures.ContainsKey(ctorToken))
                 {
                     byte[] signature = _parent.GetMethodSignature(ctorToken);
-                    _methodSignatures.Add(ctorToken, new Signature(_parent, signature));
+                    _methodSignatures.Add(ctorToken, new Signature.MethodSignature(_parent, signature));
                 }
             }
             public override void Call(int offset, bool tail, uint methodToken)
@@ -63,7 +62,7 @@ namespace Runic.CIL
                 if (!_methodSignatures.ContainsKey(methodToken))
                 {
                     byte[] signature = _parent.GetMethodSignature(methodToken);
-                    _methodSignatures.Add(methodToken, new Signature(_parent, signature));
+                    _methodSignatures.Add(methodToken, new Signature.MethodSignature(_parent, signature));
                 }
             }
             public override void CallVirt(int offset, bool noNullCheck, uint constrainedType, bool tail, uint methodToken)
@@ -71,7 +70,7 @@ namespace Runic.CIL
                 if (!_methodSignatures.ContainsKey(methodToken))
                 {
                     byte[] signature = _parent.GetMethodSignature(methodToken);
-                    _methodSignatures.Add(methodToken, new Signature(_parent, signature));
+                    _methodSignatures.Add(methodToken, new Signature.MethodSignature(_parent, signature));
                 }
             }
             public override void Calli(int offset, bool tail, uint descriptorToken)
@@ -79,7 +78,7 @@ namespace Runic.CIL
                 if (!_methodSignatures.ContainsKey(descriptorToken))
                 {
                     byte[] signature = _parent.GetMethodSignature(descriptorToken);
-                    _methodSignatures.Add(descriptorToken, new Signature(_parent, signature));
+                    _methodSignatures.Add(descriptorToken, new Signature.MethodSignature(_parent, signature));
                 }
             }
         }

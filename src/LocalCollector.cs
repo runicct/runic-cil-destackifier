@@ -32,21 +32,22 @@ namespace Runic.CIL
     {
         class LocalCollector : Disassembler
         {
-            HashSet<int> _locals = new HashSet<int>();
-            public override void LdLoc(int offset, int index) { _locals.Add(index); }
-            public override void LdLocA(int offset, int index) { _locals.Add(index); }
-            public override void StLoc(int offset, int index) { _locals.Add(index); }
+            int _count = 0;
+            void AddLocal(int index) { if (index >= _count) { _count = index + 1; } }
+            public override void LdLoc(int offset, int index) { AddLocal(index); }
+            public override void LdLocA(int offset, int index) { AddLocal(index); }
+            public override void StLoc(int offset, int index) { AddLocal(index); }
 #if NET6_0_OR_GREATER
-            public HashSet<int> Process(Span<byte> bytecode)
+            public int Process(Span<byte> bytecode)
             {
                 Disassemble(bytecode, 0, bytecode.Length);
-                return _locals;
+                return _count;
             }
 #endif
-            public HashSet<int> Process(byte[] bytecode)
+            public int Process(byte[] bytecode)
             {
                 Disassemble(bytecode, 0, bytecode.Length);
-                return _locals;
+                return _count;
             }
         }
     }

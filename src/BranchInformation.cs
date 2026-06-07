@@ -32,7 +32,7 @@ namespace Runic.CIL
         partial class BranchInformation
         {
             Destackifier _parent;
-            Dictionary<uint, Signature> _methodSignatures = new Dictionary<uint, Signature>();
+            Dictionary<uint, Signature.MethodSignature> _methodSignatures = new Dictionary<uint, Signature.MethodSignature>();
             Dictionary<int, Information> _information = new Dictionary<int, Information>();
             int _maxStackSize = 0;
             public int MaxStackSize { get { return _maxStackSize; } }
@@ -81,9 +81,9 @@ namespace Runic.CIL
             ExceptionHandlingClause[] _ehc;
 #endif
 #if NET6_0_OR_GREATER
-            public BranchInformation(Dictionary<uint, Signature> signatures, ExceptionHandlingClause[]? ehc)
+            public BranchInformation(Dictionary<uint, Signature.MethodSignature> signatures, ExceptionHandlingClause[]? ehc)
 #else
-            public BranchInformation(Dictionary<uint, Signature> signatures, ExceptionHandlingClause[] ehc)
+            public BranchInformation(Dictionary<uint, Signature.MethodSignature> signatures, ExceptionHandlingClause[] ehc)
 #endif
             {
                 _methodSignatures = signatures;

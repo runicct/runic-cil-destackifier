@@ -520,7 +520,7 @@ namespace Runic.CIL
                 }
                 public override void Call(int offset, bool tail, uint methodToken)
                 {
-                    Signature signature = _parent._methodSignatures[methodToken];
+                    Signature.MethodSignature signature = _parent._methodSignatures[methodToken];
                     _stackSize -= (int)signature.ParametersCount;
                     if (signature.HasThis) { _stackSize -= 1; }
                     if (!signature.ReturnVoid) { _stackSize += 1; }
@@ -528,7 +528,7 @@ namespace Runic.CIL
                 }
                 public override void CallVirt(int offset, bool noNullCheck, uint constrainedType, bool tail, uint methodToken)
                 {
-                    Signature signature = _parent._methodSignatures[methodToken];
+                    Signature.MethodSignature signature = _parent._methodSignatures[methodToken];
                     _stackSize -= (int)signature.ParametersCount;
                     if (signature.HasThis) { _stackSize -= 1; }
                     if (!signature.ReturnVoid) { _stackSize += 1; }
@@ -536,7 +536,7 @@ namespace Runic.CIL
                 }
                 public override void Calli(int offset, bool tail, uint descriptorToken)
                 {
-                    Signature signature = _parent._methodSignatures[descriptorToken];
+                    Signature.MethodSignature signature = _parent._methodSignatures[descriptorToken];
                     _stackSize -= (int)signature.ParametersCount;
                     if (signature.HasThis) { _stackSize -= 1; }
                     if (!signature.ReturnVoid) { _stackSize += 1; }

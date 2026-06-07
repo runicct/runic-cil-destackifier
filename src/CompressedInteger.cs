@@ -40,5 +40,24 @@ namespace Runic.CIL
 
             return (uint)(((uint)firstByte << 24) | ((uint)secondByte << 16) | ((uint)thirdByte << 8) | ((uint)forthByte));
         }
+        internal static void EncodeCompressedInteger(uint value, List<byte> signature)
+        {
+            if (value <= 0x7F)
+            {
+                signature.Add((byte)(value & 0x7F));
+            }
+            else if (value <= 0x3FFF)
+            {
+                signature.Add((byte)(((value >> 8) & 0x3F) | 0x80));
+                signature.Add((byte)(value & 0xFF));
+            }
+            else
+            {
+                signature.Add((byte)(((value >> 24) & 0x3F) | 0xC0));
+                signature.Add((byte)((value >> 16) & 0xFF));
+                signature.Add((byte)((value >> 8) & 0xFF));
+                signature.Add((byte)(value & 0xFF));
+            }
+        }
     }
 }
