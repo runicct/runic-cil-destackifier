@@ -205,8 +205,8 @@ namespace Runic.CIL
         public virtual void NewObj(int offset, uint ctorToken, int destination, int[] parameters) { }
         public virtual void CallVirt(int offset, bool noNullCheck, bool tail, uint methodToken, int destination, int[] parameters) { }
         public virtual void CallVirt(int offset, bool noNullCheck, bool tail, uint methodToken, int[] parameters) { }
-        public virtual void CallI(int offset, bool tail, uint signatureToken, int destination, int[] parameters) { }
-        public virtual void CallI(int offset, bool tail, uint signatureToken, int[] parameters) { }
+        public virtual void CallI(int offset, bool tail, uint signatureToken, int destination, int methodEntryPointer, int[] parameters) { }
+        public virtual void CallI(int offset, bool tail, uint signatureToken, int methodEntryPointer, int[] parameters) { }
         public virtual void Call(int offset, bool tail, uint methodToken, int destination, int[] parameters) { }
         public virtual void Call(int offset, bool tail, uint methodToken, int[] parameters) { }
         public virtual void InitObj(int offset, uint typeToken, int destination) { }
@@ -239,7 +239,8 @@ namespace Runic.CIL
         public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, Span<byte> bytecode)
         {
             SignatureCollector signatureCollector = new SignatureCollector(this);
-            Signature.MethodSignature signature = new Signature.MethodSignature(this, methodSignature);
+            uint sigoffset = 0;
+            Signature.MethodSignature signature = new Signature.MethodSignature(this, methodSignature, ref sigoffset);
             Signature.LocalsSignature locSignature;
             Dictionary<uint, Signature.MethodSignature> methodSignatures = signatureCollector.Process(bytecode);
             if (localsSignature == null || localsSignature.Length == 0)
@@ -247,7 +248,7 @@ namespace Runic.CIL
                 LocalCollector localCollector = new LocalCollector();
                 locSignature = new Signature.LocalsSignature(localCollector.Process(bytecode));
             }
-            else { locSignature = new Signature.LocalsSignature(localsSignature); }
+            else { sigoffset = 0; locSignature = new Signature.LocalsSignature(localsSignature, ref sigoffset); }
             BranchInformation branchInformation = new BranchInformation(methodSignatures, exceptionHandlingClauses);
             branchInformation.Process(bytecode);
             StoreSimplify storeSimplify = new StoreSimplify(branchInformation);
@@ -277,8 +278,9 @@ namespace Runic.CIL
         public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, byte[] bytecode)
 #endif
         {
+            uint sigoffset = 0;
             SignatureCollector signatureCollector = new SignatureCollector(this);
-            Signature.MethodSignature signature = new Signature.MethodSignature(this, methodSignature);
+            Signature.MethodSignature signature = new Signature.MethodSignature(this, methodSignature, ref sigoffset);
             Dictionary<uint, Signature.MethodSignature> methodSignatures = signatureCollector.Process(bytecode);
             Signature.LocalsSignature locSignature;
             if (localsSignature == null || localsSignature.Length == 0)
@@ -286,7 +288,7 @@ namespace Runic.CIL
                 LocalCollector localCollector = new LocalCollector();
                 locSignature = new Signature.LocalsSignature(localCollector.Process(bytecode));
             }
-            else { locSignature = new Signature.LocalsSignature(localsSignature); }
+            else { sigoffset = 0; locSignature = new Signature.LocalsSignature(localsSignature, ref sigoffset); }
             
             BranchInformation branchInformation = new BranchInformation(methodSignatures, exceptionHandlingClauses);
             branchInformation.Process(bytecode);

@@ -536,6 +536,7 @@ namespace Runic.CIL
                 }
                 public override void Calli(int offset, bool tail, uint descriptorToken)
                 {
+                    _stackSize -= 1; // Method entry pointer
                     Signature.MethodSignature signature = _parent._methodSignatures[descriptorToken];
                     _stackSize -= (int)signature.ParametersCount;
                     if (signature.HasThis) { _stackSize -= 1; }

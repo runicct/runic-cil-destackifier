@@ -187,6 +187,15 @@ namespace Runic.CIL
                     }
                     public override void Emit(List<byte> output) { output.Add(0x1D); _elementType.Emit(output); }
                 }
+                internal class FunctionPointer : Type
+                {
+                    MethodSignature _methodSignature;
+                    public FunctionPointer(MethodSignature methodSignature)
+                    {
+                        _methodSignature = methodSignature;
+                    }
+                    public override void Emit(List<byte> output) { output.Add(0x1F); _methodSignature.Emit(output); }
+                }
                 internal class GenericTypeInType : Type
                 {
                     uint _index;
@@ -329,6 +338,7 @@ namespace Runic.CIL
                     case 0x19: return Signature.Type.NUInt.Instance;
                     case 0x1C: return Signature.Type.Object.Instance;
                     case 0x1D: return new Signature.Type.ArrayType(DecodeType(signature, ref offset));
+                    case 0x1B: return new Signature.Type.FunctionPointer(new MethodSignature(null, signature, ref offset));
                     case 0x11: return new Signature.Type.ValueType(TypeDefOrRefOrSpecToToken(ReadCompressedInteger(signature, ref offset)));
                     case 0x12: return new Signature.Type.TypeToken(TypeDefOrRefOrSpecToToken(ReadCompressedInteger(signature, ref offset)));
                     case 0x41: return new Signature.Type.Sentinel();
@@ -339,6 +349,8 @@ namespace Runic.CIL
 
             internal class MethodSignature : Signature
             {
+                uint _genericParametersCount;
+                public uint GenericParametersCount { get { return _genericParametersCount; } }
                 uint _parametersCount;
                 public uint ParametersCount { get { return _parametersCount; } }
                 public bool ReturnVoid { get { return _returnType is Signature.Type.Void; } }
@@ -353,9 +365,9 @@ namespace Runic.CIL
                     if (index < 0 || index >= _parametersCount) { return Signature.Type.Unknown.Instance; }
                     return _parameters[index];
                 }
-                public MethodSignature(Destackifier parent, byte[] signature)
+                public MethodSignature(Destackifier parent, byte[] signature, ref uint offset)
                 {
-                    if (signature == null || signature.Length == 0)
+                    if (signature == null || signature.Length <= offset)
                     {
                         _returnType = Signature.Type.Void.Instance;
                         _parametersCount = 0;
@@ -363,24 +375,38 @@ namespace Runic.CIL
                         return;
                     }
 
-                    uint paramSignatureByteIndex = 0;
 
-                    byte flag = signature[paramSignatureByteIndex];
-                    paramSignatureByteIndex++;
+                    byte flag = signature[offset];
+                    offset++;
                     if ((flag & 0x20) != 0) { _hasThis = true; }
                     if ((flag & 0x40) != 0) { _explicitThis = true; }
                     if ((flag & 0x10) != 0)
                     {
                         // Generic Parameters count
-                        ReadCompressedInteger(signature, ref paramSignatureByteIndex);
+                        _genericParametersCount = ReadCompressedInteger(signature, ref offset);
                     }
 
-                    _parametersCount = ReadCompressedInteger(signature, ref paramSignatureByteIndex);
-                    _returnType = DecodeType(signature, ref paramSignatureByteIndex);
+                    _parametersCount = ReadCompressedInteger(signature, ref offset);
+                    _returnType = DecodeType(signature, ref offset);
                     _parameters = new Signature.Type[_parametersCount];
                     for (int n = 0; n < _parametersCount; n++)
                     {
-                        _parameters[n] = DecodeType(signature, ref paramSignatureByteIndex);
+                        _parameters[n] = DecodeType(signature, ref offset);
+                    }
+                }
+                public void Emit(List<byte> output)
+                {
+                    byte flag = 0;
+                    if (_hasThis) { flag |= 0x20; }
+                    if (_explicitThis) { flag |= 0x40; }
+                    if (_genericParametersCount > 0) { flag |= 0x10; }
+                    output.Add(flag);
+                    if (_genericParametersCount > 0) { EncodeCompressedInteger(_genericParametersCount, output); }
+                    EncodeCompressedInteger(_parametersCount, output);
+                    _returnType.Emit(output);
+                    for (int n = 0; n < _parametersCount; n++)
+                    {
+                        _parameters[n].Emit(output);
                     }
                 }
             }
@@ -394,20 +420,20 @@ namespace Runic.CIL
                     if (index < 0 || index >= _locals.Length) { return Signature.Type.Unknown.Instance; }
                     return _locals[index];
                 }
-                internal LocalsSignature(byte[] signature)
+                internal LocalsSignature(byte[] signature, ref uint offset)
                 {
                     uint count = 0;
-                    if (signature.Length == 0 || signature[0] != 0x07)
+                    if (signature.Length <= offset || signature[offset] != 0x07)
                     {
                         _locals = new Signature.Type[0];
                         return;
                     }
-                    uint localSignatureByteIndex = 1;
-                    count = ReadCompressedInteger(signature, ref localSignatureByteIndex);
+                    offset++;
+                    count = ReadCompressedInteger(signature, ref offset);
                     _locals = new Type[count];
                     for (int n = 0; n < count; n++)
                     {
-                        _locals[n] = DecodeType(signature, ref localSignatureByteIndex);
+                        _locals[n] = DecodeType(signature, ref offset);
                     }
                 }
                 internal LocalsSignature(int count)

@@ -54,7 +54,8 @@ namespace Runic.CIL
                 if (!_methodSignatures.ContainsKey(ctorToken))
                 {
                     byte[] signature = _parent.GetMethodSignature(ctorToken);
-                    _methodSignatures.Add(ctorToken, new Signature.MethodSignature(_parent, signature));
+                    uint sigoffset = 0;
+                    _methodSignatures.Add(ctorToken, new Signature.MethodSignature(_parent, signature, ref sigoffset));
                 }
             }
             public override void Call(int offset, bool tail, uint methodToken)
@@ -62,7 +63,8 @@ namespace Runic.CIL
                 if (!_methodSignatures.ContainsKey(methodToken))
                 {
                     byte[] signature = _parent.GetMethodSignature(methodToken);
-                    _methodSignatures.Add(methodToken, new Signature.MethodSignature(_parent, signature));
+                    uint sigoffset = 0;
+                    _methodSignatures.Add(methodToken, new Signature.MethodSignature(_parent, signature, ref sigoffset));
                 }
             }
             public override void CallVirt(int offset, bool noNullCheck, uint constrainedType, bool tail, uint methodToken)
@@ -70,7 +72,8 @@ namespace Runic.CIL
                 if (!_methodSignatures.ContainsKey(methodToken))
                 {
                     byte[] signature = _parent.GetMethodSignature(methodToken);
-                    _methodSignatures.Add(methodToken, new Signature.MethodSignature(_parent, signature));
+                    uint sigoffset = 0;
+                    _methodSignatures.Add(methodToken, new Signature.MethodSignature(_parent, signature, ref sigoffset));
                 }
             }
             public override void Calli(int offset, bool tail, uint descriptorToken)
@@ -78,7 +81,8 @@ namespace Runic.CIL
                 if (!_methodSignatures.ContainsKey(descriptorToken))
                 {
                     byte[] signature = _parent.GetMethodSignature(descriptorToken);
-                    _methodSignatures.Add(descriptorToken, new Signature.MethodSignature(_parent, signature));
+                    uint sigoffset = 0;
+                    _methodSignatures.Add(descriptorToken, new Signature.MethodSignature(_parent, signature, ref sigoffset));
                 }
             }
         }

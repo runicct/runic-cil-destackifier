@@ -874,6 +874,7 @@ namespace Runic.CIL
             }
             public override void Calli(int offset, bool tail, uint descriptorToken)
             {
+                int methodEntryPointer = Pop();
                 Signature.MethodSignature methodSignature = _signatures[descriptorToken];
                 uint parameterCount = methodSignature.ParametersCount;
                 if (methodSignature.HasThis) { parameterCount += 1; }
@@ -882,12 +883,12 @@ namespace Runic.CIL
                 if (!methodSignature.ReturnVoid)
                 {
                     int dest = GetDestinationLocal(offset, methodSignature.ReturnType);
-                    _parent.CallI(offset, tail, descriptorToken, dest, parameters);
+                    _parent.CallI(offset, tail, descriptorToken, dest, methodEntryPointer, parameters);
                     Push(dest);
                 }
                 else
                 {
-                    _parent.CallI(offset, tail, descriptorToken, parameters);
+                    _parent.CallI(offset, tail, descriptorToken, methodEntryPointer, parameters);
                 }
             }
             public override void LdStr(int offset, uint literalStringToken)
