@@ -26,3 +26,6 @@ LdCI4(/* offset: */ 1, %2, 2)
 Add(/* offset: */ 2, %3, %1, %2)
 StLoc(/* offset: */ 3, %0, %3)
 ```
+
+## Note on methods with this
+In order for the destackifier to properly tag the this pointer with its real type rather than void* make sure to use the callbacks with the methodToken passed as a parameter
