@@ -135,7 +135,7 @@ namespace Runic.CIL
                         _thisParameterType = _signature.GetParameterType(0);
                         return _thisParameterType;
                     }
-                    if (_parent.IsValueType(declaringTypeToken)) { _thisParameterType = new Signature.Type.ValueType(declaringTypeToken); }
+                    if (_parent.IsValueType(declaringTypeToken)) { _thisParameterType = new Signature.Type.Pointer(new Signature.Type.ValueType(declaringTypeToken)); }
                     else { _thisParameterType = new Signature.Type.TypeToken(declaringTypeToken); }
                     return _thisParameterType;
                 }
