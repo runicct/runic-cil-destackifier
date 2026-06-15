@@ -53,8 +53,10 @@ namespace Runic.CIL
             Dictionary<uint, Signature.MethodSignature> _signatures;
             int _nextLocal = 0;
             Signature.LocalsSignature _locals;
-            internal DestackifyDisassembler(BranchInformation branchInformation, StoreSimplify storeSimplify, Dictionary<uint, Signature.MethodSignature> signatures, Signature.LocalsSignature locals, uint maxStackSize, Signature.MethodSignature signature, Destackifier parent)
+            uint _methodToken;
+            internal DestackifyDisassembler(uint methodToken, BranchInformation branchInformation, StoreSimplify storeSimplify, Dictionary<uint, Signature.MethodSignature> signatures, Signature.LocalsSignature locals, uint maxStackSize, Signature.MethodSignature signature, Destackifier parent)
             {
+                _methodToken = methodToken;
                 _storeSimplify = storeSimplify;
                 _locals = locals;
                 _nextLocal = _locals.LocalsCount;
@@ -116,6 +118,28 @@ namespace Runic.CIL
                 }
                 _fieldTypes.Add(fieldToken, type);
                 return type;
+            }
+#if NET6_0_OR_GREATER
+            Signature.Type? _thisParameterType = null;
+#else
+            Signature.Type _thisParameterType = null;
+#endif
+            public Signature.Type GetParameterType(int parameterIndex)
+            {
+                if (_signature.HasThis && parameterIndex == 0) 
+                {
+                    if (_thisParameterType != null) { return _thisParameterType; }
+                    uint declaringTypeToken = _parent.GetDeclaringType(_methodToken);
+                    if (declaringTypeToken == 0)
+                    {
+                        _thisParameterType = _signature.GetParameterType(0);
+                        return _thisParameterType;
+                    }
+                    if (_parent.IsValueType(declaringTypeToken)) { _thisParameterType = new Signature.Type.ValueType(declaringTypeToken); }
+                    else { _thisParameterType = new Signature.Type.TypeToken(declaringTypeToken); }
+                    return _thisParameterType;
+                }
+                return _signature.GetParameterType(parameterIndex);
             }
             Dictionary<uint, bool> _valueTypes = new Dictionary<uint, bool>();
             public bool IsValueType(uint typeToken)
@@ -516,7 +540,7 @@ namespace Runic.CIL
             public override void EndFinally(int offset) { _parent.EndFinally(offset); }
             public override void LdArg(int offset, int index)
             {
-                int dest = GetDestinationLocal(offset, _signature.GetParameterType(index));
+                int dest = GetDestinationLocal(offset, GetParameterType(index));
                 _parent.LdArg(offset, dest, index);
                 Push(dest);
             }
@@ -936,7 +960,7 @@ namespace Runic.CIL
             }
             public override void LdArgA(int offset, int index)
             {
-                int dest = GetDestinationLocal(offset, new Signature.Type.ByRef(_signature.GetParameterType(index)));
+                int dest = GetDestinationLocal(offset, new Signature.Type.ByRef(GetParameterType(index)));
                 _parent.LdArgA(offset, dest, index);
                 Push(dest);
             }

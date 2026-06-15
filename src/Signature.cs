@@ -262,7 +262,7 @@ namespace Runic.CIL
                     public override void Emit(List<byte> output) { output.Add(0x41); }
                 }
             }
-
+            static Type VoidPointer = new Type.Pointer(Type.Void.Instance); 
             static uint TokenToTypeDefOrRefOrSpec(uint token)
             {
                 switch (token & 0xFF000000)
@@ -362,6 +362,11 @@ namespace Runic.CIL
                 Signature.Type[] _parameters;
                 public Signature.Type GetParameterType(int index)
                 {
+                    if (_hasThis) 
+                    {
+                        if (index == 0) { return VoidPointer; }
+                        index = index - 1;
+                    }
                     if (index < 0 || index >= _parametersCount) { return Signature.Type.Unknown.Instance; }
                     return _parameters[index];
                 }
@@ -457,12 +462,8 @@ namespace Runic.CIL
                         _fieldType = Signature.Type.Unknown.Instance;
                         return;
                     }
-                    uint fieldSignatureByteIndex = 0;
-                    byte flag = signature[fieldSignatureByteIndex];
-                    fieldSignatureByteIndex++;
-                    if ((flag & 0x20) != 0) { throw new ArgumentException("Invalid field signature"); }
-                    if ((flag & 0x40) != 0) { throw new ArgumentException("Invalid field signature"); }
-                    if ((flag & 0x10) != 0) { throw new ArgumentException("Invalid field signature"); }
+                    uint fieldSignatureByteIndex = 1;
+                    if (signature[0] != 0x06) { throw new Exception("Invalid field signature"); }
                     _fieldType = DecodeType(signature, ref fieldSignatureByteIndex);
                 }
             }

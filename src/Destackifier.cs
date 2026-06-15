@@ -34,6 +34,7 @@ namespace Runic.CIL
         public abstract byte[] GetMethodSignature(uint methodToken);
         public virtual byte[] GetLocalsSignature(uint methodToken) { return new byte[0]; }
         public virtual byte[] GetFieldSignature(uint fieldToken) { return new byte[0]; }
+        public virtual uint GetDeclaringType(uint methodToken) { return 0; }
         public virtual bool IsValueType(uint typeToken) { return false; }
         public virtual uint GetRuntimeTypeHandleToken() { return 0; }
 
@@ -232,11 +233,12 @@ namespace Runic.CIL
         public virtual void DeclareLocal(int local, byte[] signature) { }
 
 #if NET6_0_OR_GREATER
-        public void Destackify(uint methodToken, Span<byte> bytecode) { Destackify(GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
-        public void Destackify(byte[] methodSignature, Span<byte> bytecode) { Destackify(null, methodSignature, new byte[0], bytecode); }
-        public void Destackify(byte[] methodSignature, byte[] localsSignature, Span<byte> bytecode) { Destackify(null, methodSignature, localsSignature, bytecode); }
-        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, uint methodToken, Span<byte> bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
-        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, Span<byte> bytecode)
+        public void Destackify(uint methodToken, Span<byte> bytecode) { DestackifyInternal(methodToken, null, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
+        public void Destackify(byte[] methodSignature, Span<byte> bytecode) { DestackifyInternal(0, null, methodSignature, new byte[0], bytecode); }
+        public void Destackify(byte[] methodSignature, byte[] localsSignature, Span<byte> bytecode) { DestackifyInternal(0, null, methodSignature, localsSignature, bytecode); }
+        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, uint methodToken, Span<byte> bytecode) { DestackifyInternal(methodToken, exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
+        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, Span<byte> bytecode) { DestackifyInternal(0, exceptionHandlingClauses, methodSignature, localsSignature, bytecode); }
+        void DestackifyInternal(uint methodToken, ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, Span<byte> bytecode)
         {
             SignatureCollector signatureCollector = new SignatureCollector(this);
             uint sigoffset = 0;
@@ -253,17 +255,17 @@ namespace Runic.CIL
             branchInformation.Process(bytecode);
             StoreSimplify storeSimplify = new StoreSimplify(branchInformation);
             storeSimplify.Process(bytecode);
-            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, storeSimplify, methodSignatures, locSignature, (uint)branchInformation.MaxStackSize, signature, this);
+            DestackifyDisassembler disassembler = new DestackifyDisassembler(methodToken, branchInformation, storeSimplify, methodSignatures, locSignature, (uint)branchInformation.MaxStackSize, signature, this);
             disassembler.Process(bytecode);
         }
 #endif
-        public void Destackify(uint methodToken, byte[] bytecode) { Destackify(GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
-        public void Destackify(byte[] methodSignature, byte[] bytecode) { Destackify(null, methodSignature, new byte[0], bytecode); }
-        public void Destackify(byte[] methodSignature, byte[] localSignature, byte[] bytecode) { Destackify(null, methodSignature, localSignature, bytecode); }
+        public void Destackify(uint methodToken, byte[] bytecode) { DestackifyInternal(methodToken, null, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
+        public void Destackify(byte[] methodSignature, byte[] bytecode) { DestackifyInternal(0, null, methodSignature, new byte[0], bytecode); }
+        public void Destackify(byte[] methodSignature, byte[] localSignature, byte[] bytecode) { DestackifyInternal(0, null, methodSignature, localSignature, bytecode); }
 #if NET6_0_OR_GREATER
-        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, uint methodToken, byte[] bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
+        public void Destackify(ExceptionHandlingClause[]? exceptionHandlingClauses, uint methodToken, byte[] bytecode) { DestackifyInternal(methodToken, exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
 #else
-        public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, uint methodToken, byte[] bytecode) { Destackify(exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
+        public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, uint methodToken, byte[] bytecode) { DestackifyInternal(methodToken, exceptionHandlingClauses, GetMethodSignature(methodToken), GetLocalsSignature(methodToken), bytecode); }
 #endif
 
 #if NET6_0_OR_GREATER
@@ -278,8 +280,18 @@ namespace Runic.CIL
         public void Destackify(ExceptionHandlingClause[] exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, byte[] bytecode)
 #endif
         {
+            DestackifyInternal(0, exceptionHandlingClauses, methodSignature, localsSignature, bytecode);
+        }
+
+#if NET6_0_OR_GREATER
+        void DestackifyInternal(uint methodToken, ExceptionHandlingClause[]? exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, byte[] bytecode)
+#else
+        void DestackifyInternal(uint methodToken, ExceptionHandlingClause[] exceptionHandlingClauses, byte[] methodSignature, byte[] localsSignature, byte[] bytecode)
+#endif
+        {
             uint sigoffset = 0;
             SignatureCollector signatureCollector = new SignatureCollector(this);
+
             Signature.MethodSignature signature = new Signature.MethodSignature(this, methodSignature, ref sigoffset);
             Dictionary<uint, Signature.MethodSignature> methodSignatures = signatureCollector.Process(bytecode);
             Signature.LocalsSignature locSignature;
@@ -289,12 +301,12 @@ namespace Runic.CIL
                 locSignature = new Signature.LocalsSignature(localCollector.Process(bytecode));
             }
             else { sigoffset = 0; locSignature = new Signature.LocalsSignature(localsSignature, ref sigoffset); }
-            
+
             BranchInformation branchInformation = new BranchInformation(methodSignatures, exceptionHandlingClauses);
             branchInformation.Process(bytecode);
             StoreSimplify storeSimplify = new StoreSimplify(branchInformation);
             storeSimplify.Process(bytecode);
-            DestackifyDisassembler disassembler = new DestackifyDisassembler(branchInformation, storeSimplify, methodSignatures, locSignature, (uint)branchInformation.MaxStackSize, signature, this);
+            DestackifyDisassembler disassembler = new DestackifyDisassembler(methodToken, branchInformation, storeSimplify, methodSignatures, locSignature, (uint)branchInformation.MaxStackSize, signature, this);
             disassembler.Process(bytecode);
         }
     }
