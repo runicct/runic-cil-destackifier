@@ -1013,7 +1013,7 @@ namespace Runic.CIL
             public override void NewObj(int offset, uint ctorToken)
             {
                 Signature.MethodSignature ctorSig = _signatures[ctorToken];
-                int dest = GetDestinationLocal(offset, ctorSig.ReturnType);
+                int dest = GetDestinationLocal(offset, new Signature.Type.TypeToken(_parent.GetDeclaringType(ctorToken)));
                 int[] parameters = new int[ctorSig.ParametersCount];
                 for (int n = parameters.Length - 1; n >= 0; n--) { parameters[n] = Pop(); }
                 _parent.NewObj(offset, ctorToken, dest, parameters);
