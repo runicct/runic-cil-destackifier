@@ -214,6 +214,8 @@ namespace Runic.CIL
                         for (int n = 0; n < saveSlot.StackSize; n++)
                         {
                             int local = Pop();
+                            Signature.Type localType = GetLocalType(local);
+                            if (localType != null && !(localType is Signature.Type.Unknown)) { SetLocalType(saveSlot.Locals[n], localType); }
                             _parent.StLoc(offset, saveSlot.Locals[n], local);
                         }
                         return;
@@ -291,7 +293,7 @@ namespace Runic.CIL
                                     int local = Pop();
                                     Signature.Type localType = GetLocalType(local);
                                     if (localType != null && !(localType is Signature.Type.Unknown)) { SetLocalType(saveSlot.Locals[n], localType); }
-                                    _parent.StLoc(previousOffset, saveSlot.Locals[n], Pop());
+                                    _parent.StLoc(previousOffset, saveSlot.Locals[n], local);
                                 }
                             }
                             for (int n = 0; n < saveSlot.StackSize; n++)
