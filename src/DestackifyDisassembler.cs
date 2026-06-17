@@ -183,8 +183,14 @@ namespace Runic.CIL
             public void SetLocalType(int local, Signature.Type type)
             {
                 if (!_delayedTypeLocals.Contains(local)) { return; }
-                _localTypes.Add(local, type);
-                _delayedTypeLocals.Remove(local);
+                if (!(type is Signature.Type.Unknown))
+                {
+                    _localTypes.Add(local, type);
+                    _delayedTypeLocals.Remove(local);
+                    List<byte> output = new List<byte>();
+                    type.Emit(output);
+                    _parent.DeclareLocal(local, output.ToArray());
+                }
             }
 
             uint _runtimeTypeHandleToken = 0;
